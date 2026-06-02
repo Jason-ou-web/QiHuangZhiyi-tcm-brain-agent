@@ -18,32 +18,6 @@ services:
       - redis_data:/data
     restart: unless-stopped
 
-  embedding:
-    image: michaelfeil/infinity:latest
-    container_name: tcm-embedding
-    ports:
-      - "8081:7997"
-    command:
-      - --model-id=BAAI/bge-m3
-      - --port=7997
-    volumes:
-      - embedding_cache:/root/.cache
-    restart: unless-stopped
-
-  reranker:
-    image: michaelfeil/infinity:latest
-    container_name: tcm-reranker
-    ports:
-      - "8082:7997"
-    command:
-      - --model-id=BAAI/bge-reranker-v2-m3
-      - --port=7997
-    volumes:
-      - reranker_cache:/root/.cache
-    restart: unless-stopped
-
 volumes:
   qdrant_data:
   redis_data:
-  embedding_cache:
-  reranker_cache:

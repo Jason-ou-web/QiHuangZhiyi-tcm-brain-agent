@@ -18,6 +18,31 @@ services:
       - redis_data:/data
     restart: unless-stopped
 
+  embedding:
+    image: ghcr.io/huggingface/text-embeddings-inference:latest
+    container_name: tcm-embedding
+    ports:
+      - "8081:80"
+    environment:
+      - MODEL_ID=BAAI/bge-m3
+    volumes:
+      - embedding_data:/data
+    restart: unless-stopped
+
+  reranker:
+    image: ghcr.io/huggingface/text-embeddings-inference:latest
+    container_name: tcm-reranker
+    ports:
+      - "8082:80"
+    command: ["--reranker"]
+    environment:
+      - MODEL_ID=BAAI/bge-reranker-v2-m3
+    volumes:
+      - reranker_data:/data
+    restart: unless-stopped
+
 volumes:
   qdrant_data:
   redis_data:
+  embedding_data:
+  reranker_data:

@@ -17,9 +17,13 @@ import (
 	"agri-qa-system/internal/store"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/joho/godotenv"
 )
 
 func main() {
+	// Load .env from backend/ directory
+	_ = godotenv.Load()
+
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("Config error: %v", err)

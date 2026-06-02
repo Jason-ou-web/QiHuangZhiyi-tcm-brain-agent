@@ -43,8 +43,8 @@ func Load() (*Config, error) {
 		RedisAddr:        envOrDefault("REDIS_ADDR", "localhost:6379"),
 		RedisPassword:    os.Getenv("REDIS_PASSWORD"),
 		JWTSecret:        jwtSecret,
-		EmbeddingURL:     envOrDefault("EMBEDDING_URL", "http://localhost:8081/embed"),
-		RerankerURL:      envOrDefault("RERANKER_URL", "http://localhost:8082/rerank"),
+		EmbeddingURL:     envOrDefault("EMBEDDING_URL", "http://localhost:8081/embeddings"),
+		RerankerURL:      envOrDefault("RERANKER_URL", "http://localhost:8081/rerank"),
 		AllowedOrigins:   envOrDefault("ALLOWED_ORIGINS", "http://localhost:3000"),
 	}, nil
 }

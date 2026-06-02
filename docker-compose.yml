@@ -19,30 +19,31 @@ services:
     restart: unless-stopped
 
   embedding:
-    image: ghcr.io/huggingface/text-embeddings-inference:latest
+    image: michaelfeil/infinity:latest
     container_name: tcm-embedding
     ports:
-      - "8081:80"
-    environment:
-      - MODEL_ID=BAAI/bge-m3
+      - "8081:7997"
+    command:
+      - --model-id=BAAI/bge-m3
+      - --port=7997
     volumes:
-      - embedding_data:/data
+      - embedding_cache:/root/.cache
     restart: unless-stopped
 
   reranker:
-    image: ghcr.io/huggingface/text-embeddings-inference:latest
+    image: michaelfeil/infinity:latest
     container_name: tcm-reranker
     ports:
-      - "8082:80"
-    command: ["--reranker"]
-    environment:
-      - MODEL_ID=BAAI/bge-reranker-v2-m3
+      - "8082:7997"
+    command:
+      - --model-id=BAAI/bge-reranker-v2-m3
+      - --port=7997
     volumes:
-      - reranker_data:/data
+      - reranker_cache:/root/.cache
     restart: unless-stopped
 
 volumes:
   qdrant_data:
   redis_data:
-  embedding_data:
-  reranker_data:
+  embedding_cache:
+  reranker_cache:

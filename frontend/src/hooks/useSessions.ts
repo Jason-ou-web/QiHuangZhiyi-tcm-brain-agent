@@ -1,12 +1,12 @@
 import { useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { getSessions, deleteSession as apiDeleteSession } from '../services/api'
+import { getSessions, getSession, deleteSession as apiDeleteSession } from '../services/api'
 import { useSessionStore } from '../stores/sessionStore'
 import { useChatStore } from '../stores/chatStore'
 
 export function useSessions() {
   const { sessions, activeId, setSessions, setActiveId, removeSession } = useSessionStore()
-  const { clearChat } = useChatStore()
+  const { setSessionId, setMessages, setCitations, clearChat } = useChatStore()
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['sessions'],
@@ -20,8 +20,18 @@ export function useSessions() {
     }
   }, [data, setSessions])
 
-  const selectSession = (id: string) => {
+  const selectSession = async (id: string) => {
     setActiveId(id)
+    try {
+      const result = await getSession(id)
+      if (result?.session) {
+        setSessionId(result.session.id)
+        setMessages(result.session.messages ?? [])
+        setCitations([])
+      }
+    } catch {
+      // silently fail, session will just show as active
+    }
   }
 
   const newChat = () => {

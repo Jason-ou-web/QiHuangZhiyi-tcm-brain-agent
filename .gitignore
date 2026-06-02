@@ -2,6 +2,8 @@
 .env
 .env.*
 !.env.example
+*.ps1
+!*.example.ps1
 
 # IDE
 .vscode/

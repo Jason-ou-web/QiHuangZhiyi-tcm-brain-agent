@@ -2,6 +2,9 @@ package main
 
 import (
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"agri-qa-system/config"
@@ -61,13 +64,26 @@ func main() {
 	})
 
 	// global middleware
-	app.Use(middleware.CORSMiddleware("http://localhost:3000"))
+	app.Use(middleware.CORSMiddleware(cfg.AllowedOrigins))
 	app.Use(middleware.LoggerMiddleware())
 	app.Use(middleware.AuthMiddleware(cfg.JWTSecret))
 
 	// routes
 	app.Get("/health", func(c *fiber.Ctx) error {
-		return c.JSON(fiber.Map{"status": "ok"})
+		status := "ok"
+		details := map[string]string{
+			"qdrant": "ok",
+			"redis":  "ok",
+		}
+		if qdrantStore == nil {
+			details["qdrant"] = "unavailable"
+			status = "degraded"
+		}
+		if redisStore == nil {
+			details["redis"] = "unavailable"
+			status = "degraded"
+		}
+		return c.JSON(fiber.Map{"status": status, "details": details})
 	})
 
 	api := app.Group("/api/v1")
@@ -92,6 +108,32 @@ func main() {
 	}
 
 	log.Printf("Server starting on :%s", cfg.ServerPort)
+
+	// graceful shutdown
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-quit
+		log.Println("Shutting down server gracefully...")
+
+		shutdownTimeout := 10 * time.Second
+		if err := app.ShutdownWithTimeout(shutdownTimeout); err != nil {
+			log.Printf("Server forced to shutdown: %v", err)
+		}
+
+		if qdrantStore != nil {
+			if err := qdrantStore.Close(); err != nil {
+				log.Printf("Qdrant close error: %v", err)
+			}
+		}
+		if redisStore != nil {
+			if err := redisStore.Close(); err != nil {
+				log.Printf("Redis close error: %v", err)
+			}
+		}
+		log.Println("Server stopped")
+	}()
+
 	if err := app.Listen(":" + cfg.ServerPort); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}

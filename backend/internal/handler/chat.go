@@ -148,6 +148,7 @@ func sendSSEError(c *fiber.Ctx, msg string) {
 	c.Set("Content-Type", "text/event-stream")
 	c.Set("Cache-Control", "no-cache")
 	c.Set("Connection", "keep-alive")
+	c.Set("X-Accel-Buffering", "no")
 	c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
 		writeSSE(w, model.SSEEvent{Type: "error", Content: msg})
 		w.Flush()

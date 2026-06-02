@@ -40,6 +40,10 @@ func NewRedisStore(cfg *config.Config) (*RedisStore, error) {
 	return &RedisStore{client: client}, nil
 }
 
+func (s *RedisStore) Close() error {
+	return s.client.Close()
+}
+
 func (s *RedisStore) GetSession(ctx context.Context, id string) (*model.Session, error) {
 	key := sessionPrefix + id
 	data, err := s.client.Get(ctx, key).Bytes()

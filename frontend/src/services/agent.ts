@@ -56,6 +56,11 @@ export function createAgentStream(
           try {
             const event: AgentEvent = JSON.parse(data)
             onEvent(event)
+            if (event.type === 'done' || event.type === 'error') {
+              reader.cancel().catch(() => {})
+              safeOnDone()
+              return
+            }
           } catch {
             // skip invalid JSON
           }

@@ -26,9 +26,8 @@ func NewQdrantStore(cfg *config.Config) (*QdrantStore, error) {
 		return nil, fmt.Errorf("invalid QDRANT_PORT %q: %w", cfg.QdrantPort, err)
 	}
 	addr := fmt.Sprintf("%s:%d", cfg.QdrantHost, port)
-	conn, err := grpc.DialContext(context.Background(), addr,
+	conn, err := grpc.NewClient(addr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("connect qdrant: %w", err)
@@ -38,6 +37,10 @@ func NewQdrantStore(cfg *config.Config) (*QdrantStore, error) {
 		client:     pb.NewPointsClient(conn),
 		collection: cfg.QdrantCollection,
 	}, nil
+}
+
+func (s *QdrantStore) Close() error {
+	return s.conn.Close()
 }
 
 func (s *QdrantStore) Search(ctx context.Context, vector []float32, topK int) ([]model.SearchResult, error) {

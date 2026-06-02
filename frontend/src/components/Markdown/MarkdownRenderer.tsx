@@ -30,7 +30,7 @@ export function MarkdownRenderer({ content }: Props) {
           </pre>
         ),
         blockquote: ({ children }) => (
-          <blockquote className="border-l-3 border-primary-400 pl-3 my-2 italic text-gray-600">
+          <blockquote className="border-l-2 border-primary-400 pl-3 my-2 italic text-gray-600">
             {children}
           </blockquote>
         ),

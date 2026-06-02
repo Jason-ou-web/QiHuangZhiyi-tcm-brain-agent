@@ -6,18 +6,19 @@ import (
 )
 
 type Config struct {
-	ServerPort    string
-	DeepSeekAPIKey string
-	DeepSeekBaseURL string
-	DeepSeekModel  string
-	QdrantHost     string
-	QdrantPort     string
+	ServerPort       string
+	DeepSeekAPIKey   string
+	DeepSeekBaseURL  string
+	DeepSeekModel    string
+	QdrantHost       string
+	QdrantPort       string
 	QdrantCollection string
-	RedisAddr      string
-	RedisPassword  string
-	JWTSecret      string
-	EmbeddingURL   string
-	RerankerURL    string
+	RedisAddr        string
+	RedisPassword    string
+	JWTSecret        string
+	EmbeddingURL     string
+	RerankerURL      string
+	AllowedOrigins   string
 }
 
 func Load() (*Config, error) {
@@ -44,6 +45,7 @@ func Load() (*Config, error) {
 		JWTSecret:        jwtSecret,
 		EmbeddingURL:     envOrDefault("EMBEDDING_URL", "http://localhost:8081/embed"),
 		RerankerURL:      envOrDefault("RERANKER_URL", "http://localhost:8082/rerank"),
+		AllowedOrigins:   envOrDefault("ALLOWED_ORIGINS", "http://localhost:3000"),
 	}, nil
 }
 

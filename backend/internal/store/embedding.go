@@ -14,7 +14,15 @@ type EmbeddingClient struct {
 }
 
 type embeddingRequest struct {
-	Inputs []string `json:"inputs"`
+	Input []string `json:"input"`
+	Model string   `json:"model"`
+}
+
+type embeddingResponse struct {
+	Data []struct {
+		Embedding []float32 `json:"embedding"`
+		Index     int       `json:"index"`
+	} `json:"data"`
 }
 
 func NewEmbeddingClient(baseURL string) *EmbeddingClient {
@@ -27,7 +35,7 @@ func NewEmbeddingClient(baseURL string) *EmbeddingClient {
 }
 
 func (c *EmbeddingClient) Embed(text string) ([]float32, error) {
-	body := embeddingRequest{Inputs: []string{text}}
+	body := embeddingRequest{Input: []string{text}}
 	jsonBody, err := json.Marshal(body)
 	if err != nil {
 		return nil, fmt.Errorf("marshal embedding request: %w", err)
@@ -43,15 +51,15 @@ func (c *EmbeddingClient) Embed(text string) ([]float32, error) {
 		return nil, fmt.Errorf("embedding service returned %d", resp.StatusCode)
 	}
 
-	// TEI /embed returns a plain array of arrays: [[0.1, 0.2, ...]]
-	var result [][]float32
+	// Infinity returns OpenAI-compatible format: {"data": [{"embedding": [...], "index": 0}]}
+	var result embeddingResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("decode embedding: %w", err)
 	}
-	if len(result) == 0 || len(result[0]) == 0 {
+	if len(result.Data) == 0 || len(result.Data[0].Embedding) == 0 {
 		return nil, fmt.Errorf("empty embedding")
 	}
-	return result[0], nil
+	return result.Data[0].Embedding, nil
 }
 
 type RerankerClient struct {
@@ -60,13 +68,15 @@ type RerankerClient struct {
 }
 
 type rerankRequest struct {
-	Query string   `json:"query"`
-	Texts []string `json:"texts"`
+	Query     string   `json:"query"`
+	Documents []string `json:"documents"`
 }
 
-type rerankEntry struct {
-	Index int     `json:"index"`
-	Score float64 `json:"score"`
+type rerankResponse struct {
+	Data []struct {
+		Index int     `json:"index"`
+		Score float64 `json:"score"`
+	} `json:"data"`
 }
 
 func NewRerankerClient(baseURL string) *RerankerClient {
@@ -79,7 +89,7 @@ func NewRerankerClient(baseURL string) *RerankerClient {
 }
 
 func (c *RerankerClient) Rerank(query string, documents []string) ([]int, []float64, error) {
-	body := rerankRequest{Query: query, Texts: documents}
+	body := rerankRequest{Query: query, Documents: documents}
 	jsonBody, err := json.Marshal(body)
 	if err != nil {
 		return nil, nil, fmt.Errorf("marshal rerank request: %w", err)
@@ -95,14 +105,14 @@ func (c *RerankerClient) Rerank(query string, documents []string) ([]int, []floa
 		return nil, nil, fmt.Errorf("rerank service returned %d", resp.StatusCode)
 	}
 
-	// TEI /rerank returns a plain array: [{"index":0,"score":0.9}, ...]
-	var result []rerankEntry
+	// Infinity /rerank returns: {"data": [{"index":0,"score":0.9}, ...]}
+	var result rerankResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, nil, fmt.Errorf("decode rerank: %w", err)
 	}
-	indices := make([]int, len(result))
-	scores := make([]float64, len(result))
-	for i, r := range result {
+	indices := make([]int, len(result.Data))
+	scores := make([]float64, len(result.Data))
+	for i, r := range result.Data {
 		indices[i] = r.Index
 		scores[i] = r.Score
 	}

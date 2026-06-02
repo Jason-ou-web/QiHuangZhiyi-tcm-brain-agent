@@ -20,7 +20,7 @@
 - Agent SSE 流式输出（meta / thought / task_progress / tool_call / tool_result / final_answer 事件）
 - Redis 会话存储（Lua 脚本原子追加 + 自动裁剪到 50 条 + TTL 24h）
 - Qdrant 向量检索（gRPC 客户端，已升级为 `grpc.NewClient` 替代废弃 API）
-- Embedding / Reranker HTTP 客户端（含 HTTP 状态码检查）
+- Embedding / Reranker HTTP 客户端（Infinity/OpenAI 兼容格式，含 HTTP 状态码检查）
 - JWT 中间件（MVP 阶段免登录放行）
 - CORS / 日志 / 限流中间件（CORS 来源通过 `ALLOWED_ORIGINS` 环境变量配置）
 - 优雅关闭（SIGINT/SIGTERM → 10s 超时 → 关闭 Qdrant/Redis 连接）
@@ -34,8 +34,9 @@
 - Zustand 状态管理（chat / session / agent 三个 store）
 - SSE 流式消费（RAG 和 Agent 两种模式独立处理，Agent 模式支持 done/error 提前退出）
 - Agent 模式手动切换（AgentModeToggle）
-- docker-compose.yml（Qdrant + Redis）
-- `.env.example` 环境变量模板文件
+- docker-compose.yml（Qdrant + Redis，国内网络环境建议手动在 Docker Desktop 启动容器）
+- Python Embedding 服务（`backend/embed_server.py`，FastAPI + sentence-transformers，单端口 8081 同时提供 `/embeddings` 和 `/rerank`，支持 hf-mirror.com 国内镜像下载模型）
+- `.env.example` 环境变量模板文件（已更新 Embedding/Reranker URL 指向本地 Python 服务器）
 - `.gitignore` 覆盖 `.env`、`*.ps1`、`*.exe` 等敏感/构建文件
 
 ### 与计划的差距
@@ -93,8 +94,8 @@
 | DeepSeek-V4-Pro | LLM 底座，中文古籍能力强 | MVP |
 | Qdrant | 向量存储，支持标量过滤（按古籍来源/药材/症状筛选） | MVP |
 | Redis | 会话缓存 + 短期上下文，设 TTL + 条数上限 | MVP |
-| BGE-M3 / stella-m3 | Embedding 模型，独立部署（TEI/Infinity） | MVP |
-| BGE-Reranker-v2 | 召回后重排序，提升 Top-K 精度 | MVP |
+| bge-small-zh-v1.5 | Embedding 模型，Python `embed_server.py` 本地部署（sentence-transformers + FastAPI :8081） | MVP |
+| bge-reranker-base | 召回后重排序，Python `embed_server.py` 同进程部署（:8081/rerank） | MVP |
 | PostgreSQL | 业务数据持久化（对话历史/用户） | 后续引入 |
 | JWT + API Key | 用户鉴权 + 服务间调用 | 按需引入 |
 
@@ -176,7 +177,9 @@ agri-qa-system/
 │   │   ├── store/
 │   │   │   ├── qdrant.go           # Qdrant gRPC 客户端（grpc.NewClient + Close()）
 │   │   │   ├── redis.go            # Redis 会话存储（含 Close()）
-│   │   │   └── embedding.go        # Embedding + Reranker HTTP 客户端（含状态码检查）
+│   │   │   └── embedding.go        # Embedding + Reranker HTTP 客户端（Infinity/OpenAI 格式）
+│   ├── embed_server.py             # Python Embedding + Reranker 服务（FastAPI :8081）
+│   ├── requirements-embed.txt       # Python 依赖（sentence-transformers, fastapi, uvicorn）
 │   │   ├── middleware/middleware.go # CORS / Logger / RateLimit / Auth
 │   │   └── model/
 │   │       ├── model.go            # 核心类型
@@ -221,17 +224,33 @@ agri-qa-system/
 ### 环境要求
 - Go 1.22+
 - Node.js 20+
-- Docker（Qdrant + Redis）
+- Python 3.10+（Embedding 服务）
+- Docker Desktop（Qdrant + Redis，手动点击 Start 启动容器）
 - DeepSeek API Key
-- Embedding 服务（BGE-M3，独立部署）
-- Reranker 服务（BGE-Reranker-v2，独立部署）
 
-### 1. 启动基础设施
+### 1. 启动基础设施（Qdrant + Redis）
+
+在 Docker Desktop 中手动启动 `tcm-qdrant` 和 `tcm-redis` 容器。
+或通过命令行：`docker compose up -d`
+
+### 2. 启动 Embedding 服务
+
 ```bash
-docker-compose up -d
+cd backend
+# 首次运行：安装依赖（走清华源）
+python -m pip install -r requirements-embed.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+
+# 设置模型下载走国内镜像
+$env:HF_ENDPOINT = "https://hf-mirror.com"
+
+# 启动（首次会下载模型，bge-small-zh-v1.5 ~100MB + bge-reranker-base ~300MB）
+python embed_server.py
 ```
 
-### 2. 配置环境变量
+默认监听 `http://127.0.0.1:8081`，同时提供 `/embeddings` 和 `/rerank`。
+可用 `--embed-only` 仅启动 Embedding，`--rerank-only` 仅启动 Reranker。
+
+### 3. 配置环境变量
 ```bash
 cp backend/.env.example backend/.env
 # 编辑 backend/.env，填入 DEEPSEEK_API_KEY 和 JWT_SECRET
@@ -250,11 +269,11 @@ cp backend/.env.example backend/.env
 | `QDRANT_PORT` | - | `6334` | Qdrant gRPC 端口 |
 | `QDRANT_COLLECTION` | - | `tcm_knowledge` | 向量集合名 |
 | `REDIS_ADDR` | - | `localhost:6379` | Redis 地址 |
-| `EMBEDDING_URL` | - | `http://localhost:8081/embed` | Embedding 服务地址 |
-| `RERANKER_URL` | - | `http://localhost:8082/rerank` | Reranker 服务地址 |
+| `EMBEDDING_URL` | - | `http://localhost:8081/embeddings` | Embedding 服务地址（Python embed_server.py） |
+| `RERANKER_URL` | - | `http://localhost:8081/rerank` | Reranker 服务地址（同进程） |
 | `ALLOWED_ORIGINS` | - | `http://localhost:3000` | CORS 允许的前端来源 |
 
-### 3. 启动后端
+### 4. 启动后端
 ```bash
 cd backend
 go mod tidy
@@ -262,7 +281,7 @@ go run cmd/server/main.go
 ```
 服务启动在 `http://localhost:8080`。按 `Ctrl+C` 会触发优雅关闭。
 
-### 4. 启动前端
+### 5. 启动前端
 ```bash
 cd frontend
 npm install

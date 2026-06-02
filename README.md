@@ -6,7 +6,7 @@
 
 MVP 核心链路已打通：RAG 单轮问答 + Agent 多步推理双模式均可运行，SSE 流式输出、引用卡片、Agent 可视化组件已完整实现。
 
-**2026-06-02 更新**：已完成 14 项代码质量修复和安全加固，包括优雅关闭、健康检查、CORS 配置化、SSE 提前退出、Tailwind CSS 修复、ErrorBoundary、会话历史加载等。Agent 规划器当前为关键词匹配（非 LLM 驱动），自动 Agent 检测等功能待完善。详见 [CLAUDE.md](CLAUDE.md)。
+**2026-06-02 更新**：已完成 14 项代码质量修复和安全加固，包括优雅关闭、健康检查、CORS 配置化、SSE 提前退出、Tailwind CSS 修复、ErrorBoundary、会话历史加载等。Embedding/Reranker 改用 Python 本地部署（`embed_server.py`），解决国内 Docker 镜像拉取受限问题。Agent 规划器当前为关键词匹配（非 LLM 驱动），自动 Agent 检测等功能待完善。详见 [CLAUDE.md](CLAUDE.md)。
 
 ## 架构概览
 
@@ -52,18 +52,18 @@ MVP 核心链路已打通：RAG 单轮问答 + Agent 多步推理双模式均可
 │                    │                                             │
 │  ┌─────────────────┼──────────────────────────────────┐         │
 │  │             Stores                                 │         │
-│  │  ┌──────┐  ┌──────┐  ┌───────────┐               │         │
-│  │  │Qdrant│  │Redis │  │ Embedding │               │         │
-│  │  │(向量)│  │(会话)│  │ (BGE-M3)  │               │         │
-│  │  └──────┘  └──────┘  └───────────┘               │         │
+│  │  ┌──────┐  ┌──────┐  ┌───────────────────┐        │         │
+│  │  │Qdrant│  │Redis │  │ Embedding/Reranker│        │         │
+│  │  │(向量)│  │(会话)│  │ (Python :8081)    │        │         │
+│  │  └──────┘  └──────┘  └───────────────────┘        │         │
 │  └──────────────────────────────────────────────────┘         │
 │                    │                                             │
 │  ┌─────────────────┼──────────────────────────────────┐         │
 │  │             External                               │         │
-│  │  ┌────────────┐  ┌───────────────┐               │         │
-│  │  │ DeepSeek   │  │  Reranker     │               │         │
-│  │  │ V4-Pro     │  │(BGE-Reranker) │               │         │
-│  │  └────────────┘  └───────────────┘               │         │
+│  │  ┌────────────┐                                    │         │
+│  │  │ DeepSeek   │                                    │         │
+│  │  │ V4-Pro     │                                    │         │
+│  │  └────────────┘                                    │         │
 │  └──────────────────────────────────────────────────┘         │
 └───────────────────────────────────────────────────────────────┘
 ```
@@ -113,10 +113,12 @@ Step 4: 整合答案
 ## 项目结构
 
 ```
-agri-qa-system/
+QiHuangZhiyi-tcm-brain-agent/
 ├── backend/                        # Go + Fiber 后端
 │   ├── cmd/server/main.go          # 入口（含优雅关闭）
 │   ├── config/config.go            # 配置管理（含 ALLOWED_ORIGINS）
+│   ├── embed_server.py             # Python Embedding + Reranker 服务（FastAPI :8081）
+│   ├── requirements-embed.txt      # Python 依赖（sentence-transformers, fastapi, uvicorn）
 │   ├── .env.example                # 环境变量模板（安全，可提交）
 │   ├── internal/
 │   │   ├── handler/
@@ -151,7 +153,7 @@ agri-qa-system/
 │       ├── services/               # api.ts, sse.ts, agent.ts
 │       ├── hooks/                  # useChat, useSessions, useAgent
 │       └── types/                  # index.ts, agent.ts
-├── docker-compose.yml              # Qdrant + Redis
+├── docker-compose.yml              # Qdrant + Redis（Docker Desktop 手动启动）
 ├── CLAUDE.md                       # 开发指南
 └── README.md
 ```
@@ -162,18 +164,40 @@ agri-qa-system/
 
 - Go 1.22+
 - Node.js 20+
-- Docker（Qdrant + Redis）
+- Python 3.10+（Embedding 服务）
+- Docker Desktop（Qdrant + Redis）
 - DeepSeek API Key
-- Embedding 服务（BGE-M3，独立部署）
-- Reranker 服务（BGE-Reranker-v2，独立部署）
 
 ### 1. 启动基础设施
 
+在 Docker Desktop 中启动 `tcm-qdrant` 和 `tcm-redis` 容器，或通过命令行：
+
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
-### 2. 环境变量
+### 2. 启动 Embedding 服务
+
+```bash
+cd backend
+
+# 首次运行：安装依赖（清华源）
+python -m pip install -r requirements-embed.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+
+# 模型下载走国内镜像
+# PowerShell:
+$env:HF_ENDPOINT = "https://hf-mirror.com"
+# Bash:
+# export HF_ENDPOINT=https://hf-mirror.com
+
+# 启动服务（首次自动下载模型 ~400MB）
+python embed_server.py
+```
+
+默认监听 `http://127.0.0.1:8081`，同时提供 `/embeddings` 和 `/rerank`。
+可用 `--embed-only` 仅启动 Embedding，`--rerank-only` 仅启动 Reranker。
+
+### 3. 环境变量
 
 ```bash
 # 从模板创建配置文件
@@ -189,10 +213,10 @@ cp backend/.env.example backend/.env
 | `ALLOWED_ORIGINS` | - | `http://localhost:3000` | CORS 允许的前端来源 |
 | `QDRANT_HOST` | - | `localhost` | Qdrant 主机地址 |
 | `REDIS_ADDR` | - | `localhost:6379` | Redis 地址 |
-| `EMBEDDING_URL` | - | `http://localhost:8081/embed` | Embedding 服务 |
-| `RERANKER_URL` | - | `http://localhost:8082/rerank` | Reranker 服务 |
+| `EMBEDDING_URL` | - | `http://localhost:8081/embeddings` | Embedding 服务（Python embed_server.py） |
+| `RERANKER_URL` | - | `http://localhost:8081/rerank` | Reranker 服务（同进程） |
 
-### 3. 启动后端
+### 4. 启动后端
 
 ```bash
 cd backend
@@ -202,7 +226,7 @@ go run cmd/server/main.go
 
 服务启动在 `http://localhost:8080`。按 `Ctrl+C` 触发优雅关闭（10s 超时）。
 
-### 4. 启动前端
+### 5. 启动前端
 
 ```bash
 cd frontend
@@ -296,8 +320,8 @@ Agent 模式 SSE 流式对话。事件类型：
 | LLM | DeepSeek-V4-Pro | 大模型底座 |
 | 向量库 | Qdrant | 知识库向量存储与检索 |
 | 缓存 | Redis | 会话缓存 + 短期上下文 |
-| Embedding | BGE-M3 / stella-m3 | 文本向量化（独立部署） |
-| Reranker | BGE-Reranker-v2 | 召回重排序 |
+| Embedding | bge-small-zh-v1.5 | 文本向量化（Python sentence-transformers, :8081） |
+| Reranker | bge-reranker-base | 召回重排序（同进程 :8081/rerank） |
 | Agent 引擎 | ReAct 模式 | 多步推理 + 工具调用（规划器为关键词匹配） |
 | 前端框架 | React 18 | UI |
 | 样式 | Tailwind CSS 3 | 原子化 CSS |
@@ -325,6 +349,7 @@ Agent 模式 SSE 流式对话。事件类型：
 - **已实现**：5 个 TCM 工具覆盖诊断/药材/方剂/养生/穴位场景
 - **已实现**：Agent 可视化组件（推理步骤 + 任务进度 + 工具调用面板）
 - **已实现**：优雅关闭、健康检查、ErrorBoundary 等生产基础
+- **已实现**：Python 本地 Embedding/Reranker 服务（避免国内 Docker 镜像拉取问题）
 - **未实现**：PostgreSQL 持久化，先用 Redis 跑通核心链路
 - **未实现**：用户登录/注册，先做免登录体验
 - **未实现**：全文检索（Elasticsearch），Qdrant 单用足够
@@ -353,6 +378,7 @@ Agent 模式 SSE 流式对话。事件类型：
 - [x] IME 输入法兼容 + isStreaming 并发修复 + Zustand 选择器优化
 - [x] TCM 工具参数组合一致性 + nil ragPipe 防护
 - [x] Agent 可视化组件 key 稳定性 + Agent 状态清理
+- [x] Python `embed_server.py` 本地 Embedding + Reranker 服务
 - [ ] 集成自动 Agent 检测（`checkQuery` 已实现但未接入 UI）
 - [ ] 中医知识库文档预处理管线（PDF 解析 + 语义分块）
 - [ ] 知识库批量导入脚本
@@ -373,7 +399,7 @@ Agent 模式 SSE 流式对话。事件类型：
 
 ### 长期（生产就绪）
 - [ ] LLM 私有化部署（vLLM 替代 API 调用）
-- [ ] Embedding/Reranker 服务容器化
+- [ ] Embedding/Reranker 模型升级为 bge-m3（替换 bge-small）
 - [ ] CI/CD 流水线 + 自动化测试
 - [ ] 监控告警（Prometheus + Grafana）
 - [ ] 中医知识图谱（症状-药材-方剂关联）

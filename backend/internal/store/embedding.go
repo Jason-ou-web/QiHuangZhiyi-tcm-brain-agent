@@ -43,6 +43,10 @@ func (c *EmbeddingClient) Embed(text string) ([]float32, error) {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("embedding service returned %d", resp.StatusCode)
+	}
+
 	var result embeddingResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("decode embedding: %w", err)

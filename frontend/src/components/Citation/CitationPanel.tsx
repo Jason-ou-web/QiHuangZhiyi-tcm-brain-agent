@@ -13,7 +13,7 @@ export function CitationPanel() {
       </h3>
       <div className="space-y-3">
         {citations.map((cit, i) => (
-          <CitationCard key={i} citation={cit} index={i + 1} />
+          <CitationCard key={`${i}-${cit.book_title || 'unknown'}-${cit.score}`} citation={cit} index={i + 1} />
         ))}
       </div>
     </div>

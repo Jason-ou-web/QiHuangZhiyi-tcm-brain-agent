@@ -7,7 +7,7 @@ interface Props {
 }
 
 export function ReasoningSteps({ steps, isActive }: Props) {
-  if (steps.length === 0) return null
+  if (steps.length === 0 && !isActive) return null
 
   return (
     <div className="space-y-3">

@@ -124,7 +124,7 @@ export function useAgent() {
             addSession({
               id: newSessionId,
               title: query.slice(0, 30),
-              messages: [...messages, userMsg, { role: 'assistant', content: answer }],
+              messages: [...useChatStore.getState().messages, userMsg, { role: 'assistant', content: answer }],
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
             })
@@ -136,13 +136,17 @@ export function useAgent() {
 
   // Auto-analyze and suggest Agent mode
   const checkQuery = useCallback(async (query: string): Promise<boolean> => {
-    const result = await analyzeQuery(query)
-    if (result.needs_agent) {
-      setAgentMode(true)
-      return true
+    try {
+      const result = await analyzeQuery(query)
+      if (result.needs_agent) {
+        setAgentMode(true)
+        return true
+      }
+      return false
+    } catch {
+      return false
     }
-    return false
-  }, [])
+  }, [setAgentMode])
 
   return {
     isAgentMode, setAgentMode, toggleAgentMode,

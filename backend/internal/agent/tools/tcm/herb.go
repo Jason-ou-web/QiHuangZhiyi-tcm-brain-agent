@@ -39,8 +39,9 @@ func (t *HerbTool) Execute(ctx context.Context, args map[string]any, ragPipe *ra
 	query := "中药材"
 	if herbName != "" {
 		query = fmt.Sprintf("中药材 %s 性味归经 功效主治 用法", herbName)
-	} else if condition != "" {
-		query = fmt.Sprintf("中医 %s 药材推荐 配伍", condition)
+	}
+	if condition != "" {
+		query += fmt.Sprintf(" %s 药材推荐 配伍", condition)
 	}
 	if property != "" {
 		query += " " + property + "性"

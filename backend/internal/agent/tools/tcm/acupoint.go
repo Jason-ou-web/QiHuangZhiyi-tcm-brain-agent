@@ -39,10 +39,12 @@ func (t *AcupointTool) Execute(ctx context.Context, args map[string]any, ragPipe
 	query := "中医穴位"
 	if acupointName != "" {
 		query = fmt.Sprintf("穴位 %s 定位 功效 按摩", acupointName)
-	} else if meridian != "" {
-		query = fmt.Sprintf("%s 穴位 定位 功效", meridian)
-	} else if condition != "" {
-		query = fmt.Sprintf("%s 对应穴位 按摩调理", condition)
+	}
+	if meridian != "" {
+		query += fmt.Sprintf(" %s 穴位 定位 功效", meridian)
+	}
+	if condition != "" {
+		query += fmt.Sprintf(" %s 对应穴位 按摩调理", condition)
 	}
 
 	return tools.RetrieveKnowledge(ctx, ragPipe, query, map[string]any{

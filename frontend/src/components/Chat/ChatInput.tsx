@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 
 interface Props {
   onSend: (query: string) => void
@@ -8,6 +8,7 @@ interface Props {
 export function ChatInput({ onSend, disabled }: Props) {
   const [input, setInput] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const composingRef = useRef(false)
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -16,14 +17,14 @@ export function ChatInput({ onSend, disabled }: Props) {
     }
   }, [input])
 
-  const handleSubmit = () => {
+  const handleSubmit = useCallback(() => {
     if (!input.trim() || disabled) return
     onSend(input.trim())
     setInput('')
-  }
+  }, [input, disabled, onSend])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && !e.shiftKey && !composingRef.current) {
       e.preventDefault()
       handleSubmit()
     }
@@ -37,9 +38,12 @@ export function ChatInput({ onSend, disabled }: Props) {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
+          onCompositionStart={() => { composingRef.current = true }}
+          onCompositionEnd={() => { composingRef.current = false }}
           placeholder="输入中医相关问题，如：肝肾阴虚如何调理？"
           rows={1}
           disabled={disabled}
+          aria-label="输入中医问题"
           className="flex-1 resize-none rounded-xl border border-apricot-200 px-4 py-3 text-sm
                      focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent
                      disabled:bg-apricot-50 disabled:text-apricot-300 placeholder:text-apricot-300"

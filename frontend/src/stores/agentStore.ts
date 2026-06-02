@@ -34,7 +34,14 @@ export const useAgentStore = create<AgentStore>((set) => ({
   error: null,
 
   setAgentMode: (v) => set({ isAgentMode: v }),
-  toggleAgentMode: () => set((s) => ({ isAgentMode: !s.isAgentMode })),
+  toggleAgentMode: () =>
+    set((s) => {
+      if (s.isAgentMode) {
+        // Leaving Agent mode: reset stale state
+        return { isAgentMode: false, isStreaming: false, steps: [], tasks: [], toolCalls: [], finalAnswer: '', error: null }
+      }
+      return { isAgentMode: true }
+    }),
   setIsStreaming: (v) => set({ isStreaming: v }),
 
   addStep: (step) => set((s) => ({ steps: [...s.steps, step] })),

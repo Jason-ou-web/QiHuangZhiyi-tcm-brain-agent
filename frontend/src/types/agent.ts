@@ -28,7 +28,7 @@ export interface ReasoningStep {
 }
 
 export interface AgentEvent {
-  type: 'meta' | 'thought' | 'task_progress' | 'tool_call' | 'tool_result' | 'final_answer' | 'error'
+  type: 'meta' | 'thought' | 'task_progress' | 'tool_call' | 'tool_result' | 'final_answer' | 'done' | 'error'
   content: string
   data?: unknown
 }

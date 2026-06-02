@@ -9,7 +9,7 @@
 - 改动后先做最小验证
 - 沟通尽量简洁，减少 token 消耗
 
-## 当前实现状态（2026-05-26）
+## 当前实现状态（2026-06-02）
 
 ### 已完成
 - Go + Fiber 后端框架，所有路由和中间件就绪
@@ -19,24 +19,29 @@
 - Agent 模式：QueryAnalyzer + TaskPlanner + ReactExecutor + 5 个 TCM 工具 + 最终 LLM 合成
 - Agent SSE 流式输出（meta / thought / task_progress / tool_call / tool_result / final_answer 事件）
 - Redis 会话存储（Lua 脚本原子追加 + 自动裁剪到 50 条 + TTL 24h）
-- Qdrant 向量检索（gRPC 客户端）
-- Embedding / Reranker HTTP 客户端
+- Qdrant 向量检索（gRPC 客户端，已升级为 `grpc.NewClient` 替代废弃 API）
+- Embedding / Reranker HTTP 客户端（含 HTTP 状态码检查）
 - JWT 中间件（MVP 阶段免登录放行）
-- CORS / 日志 / 限流中间件
+- CORS / 日志 / 限流中间件（CORS 来源通过 `ALLOWED_ORIGINS` 环境变量配置）
+- 优雅关闭（SIGINT/SIGTERM → 10s 超时 → 关闭 Qdrant/Redis 连接）
+- `/health` 端点检查 Qdrant/Redis 依赖健康状态（返回 `ok` 或 `degraded`）
+- Store 层 `Close()` 方法（QdrantStore / RedisStore）
 - React 前端：ChatContainer / MessageList / ChatInput / MessageBubble / MarkdownRenderer
+- ErrorBoundary 错误边界组件（防止 React 渲染错误白屏）
 - 引用卡片（CitationCard + CitationPanel，可展开原文预览）
 - Agent 可视化组件（ReasoningSteps / TaskProgressBar / ToolInvocationPanel / ThoughtBubble）完整实现
-- 会话侧边栏（SessionSidebar，新建/切换/删除）
+- 会话侧边栏（SessionSidebar，新建/切换/删除/加载历史消息）
 - Zustand 状态管理（chat / session / agent 三个 store）
-- SSE 流式消费（RAG 和 Agent 两种模式独立处理）
+- SSE 流式消费（RAG 和 Agent 两种模式独立处理，Agent 模式支持 done/error 提前退出）
 - Agent 模式手动切换（AgentModeToggle）
 - docker-compose.yml（Qdrant + Redis）
+- `.env.example` 环境变量模板文件
+- `.gitignore` 覆盖 `.env`、`*.ps1`、`*.exe` 等敏感/构建文件
 
 ### 与计划的差距
 - **Agent 规划器是关键词匹配，非 LLM 驱动**：QueryAnalyzer 检查 23 个中文关键词（如"分析""辨证""调理"），>=2 个匹配才进入 Agent 模式。TaskPlanner 同样是关键词→工具映射，非 LLM 推理。
 - **ReAct 思考步骤是硬编码模板**：execute 循环中的 thought 是固定字符串，不是 LLM 生成。LLM 仅在最终合成步骤调用。
 - **Query 改写未实现**：RAG Pipeline 没有 Query Rewriting 步骤，用户原始 query 直接送入 Embedding。
-- **会话历史加载未实现**：前端 `selectSession` 只设 activeId，不调用 `getSession(id)` 拉取消息。点击历史会话无效果。
 - **自动 Agent 检测未集成**：`useAgent.checkQuery` 已实现但无组件调用，Agent 模式全靠手动切换。
 - **引用未内联到 Markdown**：LLM 输出中的 `[参考N]` 标记和 CitationCard 之间没有可点击链接。
 - **前端 `queryClient.invalidateQueries` 未调用**：SSE 流结束后未同步 TanStack Query 缓存。
@@ -45,16 +50,31 @@
 - **长期记忆未实现**：仅有 Redis 短期记忆（TTL 24h）。
 
 ### 已知问题
-- **CRITICAL**: `.gitignore` 未包含 `.env`，`backend/.env` 含真实 API Key 和 JWT Secret，提交即泄露。
-- `server.exe` (30MB) 和 `server.exe~` (30MB) 不应提交到仓库。
-- 前端 `sessionStore.selectSession` 不加载历史消息（需调用 `getSession` API）。
-- `rehype-raw` 依赖已安装但从未 import，属于死依赖。
-- `MarkdownRenderer` 中 `border-l-3` 和 `border-primary-400` 不是合法 Tailwind class，blockquote 左边框无样式。
-- Agent SSE 解析不检查 `done`/`error` 事件提前退出，会空转直到服务端关闭连接。
-- Qdrant 连接使用已废弃的 `grpc.WithBlock()`。
-- 无优雅关闭（SIGTERM 处理），SSE 连接会被强制断开。
-- `/health` 端点不检查依赖健康状态，始终返回 ok。
-- 无 ErrorBoundary，React 渲染错误会白屏。
+- **CRITICAL**: `backend/.env` 和 `backend/start.ps1` 曾含真实 API Key 和 JWT Secret。`.gitignore` 已更新排除 `.env` 和 `*.ps1`，但需确认 Git 历史已清理且密钥已轮换。
+- `server.exe` (30MB) 不应提交到仓库（`.gitignore` 已含 `*.exe`）。
+- 前端 `sessionStore.selectSession` 已修复：调用 `getSession(id)` 加载消息历史并填充 chatStore。
+- ~~`rehype-raw` 依赖已安装但从未 import~~ → 已移除。
+- ~~`MarkdownRenderer` 中 `border-l-3` 和 `border-primary-400` 不是合法 Tailwind class~~ → 已修复为 `border-l-2`，`primary-400` 已添加到 Tailwind 配置。
+- ~~Agent SSE 解析不检查 `done`/`error` 事件提前退出~~ → 已修复。
+- ~~Qdrant 连接使用已废弃的 `grpc.WithBlock()`~~ → 已升级为 `grpc.NewClient()`。
+- ~~无优雅关闭（SIGTERM 处理）~~ → 已实现。
+- ~~`/health` 端点不检查依赖健康状态~~ → 已修复。
+- ~~无 ErrorBoundary~~ → 已添加。
+- ~~EmbeddingClient 不检查 HTTP 状态码~~ → 已修复。
+- ~~CORS 来源硬编码 `localhost:3000`~~ → 已改为 `ALLOWED_ORIGINS` 环境变量。
+- ~~`sendSSEError` 缺少 `X-Accel-Buffering` 头~~ → 已修复。
+- ~~ReAct `buildArgs` 忽略 `prevResults`，多步推理各工具无法共享上下文~~ → 已修复。
+- ~~`emitAgentEvent` 在 channel 关闭时 panic~~ → 已添加 `recover()` 防护。
+- ~~前端 IME 输入法 Enter 键误触发提交~~ → 已添加 `onCompositionStart/End` 处理。
+- ~~`isStreaming` 模式门控允许 Agent+RAG 并发流~~ → 已改为 `chatStreaming || agentStreaming` 联合判断。
+- ~~`ToolInvocationPanel`/`CitationPanel` 使用 `key={i}` 导致展开状态错位~~ → 已改用稳定 key。
+- ~~`AgentModeToggle`/`ChatContainer` 未使用 Zustand 选择器导致过度渲染~~ → 已优化。
+- ~~TCM 工具中 `if/else-if` 链导致多参数时后项被丢弃~~ → herb/prescription/acupoint 已改为独立 if 组合。
+- ~~`RetrieveKnowledge` 无 nil ragPipe 防护~~ → 已添加 nil 检查。
+- ~~`ThoughtBubble` 全气泡脉冲 + 空格内容不拦截~~ → 已改为指示点脉冲 + `.trim()` 检查。
+- ~~`types/agent.ts` 中 `AgentEvent.type` 缺少 `'done'`~~ → 已添加。
+- ~~`toggleAgentMode` 未清理旧 Agent 状态~~ → 离开 Agent 模式时自动 `resetAgent()`。
+- `ReactExecutor.synthesize` 调用 `e.llm.Chat(messages)` 不传 context（待修复，需扩增 LLM 客户端接口）。
 
 ## 功能需求
 - 自然语言对话问答（多轮会话管理）
@@ -116,14 +136,14 @@
 | Zustand 4 | 客户端状态（chat / session / agent） |
 | TanStack Query 5 | 服务端状态（仅 session 列表） |
 | react-markdown 9 + remark-gfm | LLM 输出 Markdown 渲染 |
-| rehype-raw | 已安装但未使用（死依赖） |
 
 ## 项目结构（实际）
 ```
 agri-qa-system/
 ├── backend/
-│   ├── cmd/server/main.go          # 入口：初始化 stores/services，注册 Fiber 路由
-│   ├── config/config.go            # 环境变量配置
+│   ├── cmd/server/main.go          # 入口：初始化 stores/services，注册 Fiber 路由，优雅关闭
+│   ├── config/config.go            # 环境变量配置（含 ALLOWED_ORIGINS）
+│   ├── .env.example                # 环境变量模板（安全，可提交）
 │   ├── internal/
 │   │   ├── handler/
 │   │   │   ├── chat.go             # /api/v1/chat, /chat/stream, /sessions
@@ -154,19 +174,18 @@ agri-qa-system/
 │   │   ├── rag/pipeline.go         # RAG 检索+重排+上下文构建
 │   │   ├── llm/deepseek.go         # DeepSeek API（同步 + SSE）
 │   │   ├── store/
-│   │   │   ├── qdrant.go           # Qdrant gRPC 客户端
-│   │   │   ├── redis.go            # Redis 会话存储
-│   │   │   └── embedding.go        # Embedding + Reranker HTTP 客户端
+│   │   │   ├── qdrant.go           # Qdrant gRPC 客户端（grpc.NewClient + Close()）
+│   │   │   ├── redis.go            # Redis 会话存储（含 Close()）
+│   │   │   └── embedding.go        # Embedding + Reranker HTTP 客户端（含状态码检查）
 │   │   ├── middleware/middleware.go # CORS / Logger / RateLimit / Auth
 │   │   └── model/
 │   │       ├── model.go            # 核心类型
 │   │       └── agent.go            # Agent 类型
-│   ├── scripts/                    # 部署脚本
-│   └── .env                        # 环境变量（含密钥，勿提交！）
+│   └── .env                        # 环境变量（含密钥，不提交！已被 .gitignore 排除）
 ├── frontend/
 │   └── src/
 │       ├── main.tsx                # React 入口
-│       ├── App.tsx                 # QueryClientProvider 包装
+│       ├── App.tsx                 # QueryClientProvider + ErrorBoundary 包装
 │       ├── index.css               # Tailwind + 自定义样式
 │       ├── components/
 │       │   ├── Chat/               # ChatContainer, MessageList, ChatInput, MessageBubble, AgentModeToggle
@@ -174,7 +193,8 @@ agri-qa-system/
 │       │   ├── Citation/           # CitationCard, CitationPanel
 │       │   ├── Markdown/           # MarkdownRenderer
 │       │   ├── Session/            # SessionSidebar
-│       │   └── Layout/             # AppLayout
+│       │   ├── Layout/             # AppLayout
+│       │   └── ErrorBoundary.tsx   # React 错误边界（防止白屏）
 │       ├── stores/                 # Zustand: chatStore, sessionStore, agentStore
 │       ├── services/               # api.ts, sse.ts, agent.ts
 │       ├── hooks/                  # useChat, useSessions, useAgent
@@ -201,8 +221,7 @@ agri-qa-system/
 ### 环境要求
 - Go 1.22+
 - Node.js 20+
-- Qdrant（向量数据库）
-- Redis（会话缓存）
+- Docker（Qdrant + Redis）
 - DeepSeek API Key
 - Embedding 服务（BGE-M3，独立部署）
 - Reranker 服务（BGE-Reranker-v2，独立部署）
@@ -215,8 +234,25 @@ docker-compose up -d
 ### 2. 配置环境变量
 ```bash
 cp backend/.env.example backend/.env
-# 编辑 backend/.env，填入 DEEPSEEK_API_KEY 等
+# 编辑 backend/.env，填入 DEEPSEEK_API_KEY 和 JWT_SECRET
 ```
+
+环境变量说明：
+
+| 变量 | 必填 | 默认值 | 说明 |
+|------|------|--------|------|
+| `DEEPSEEK_API_KEY` | ✅ | - | DeepSeek API 密钥 |
+| `JWT_SECRET` | ✅ | - | JWT 签名密钥，用 `openssl rand -hex 32` 生成 |
+| `SERVER_PORT` | - | `8080` | 后端服务端口 |
+| `DEEPSEEK_MODEL` | - | `deepseek-chat` | LLM 模型名 |
+| `DEEPSEEK_BASE_URL` | - | `https://api.deepseek.com` | API 地址 |
+| `QDRANT_HOST` | - | `localhost` | Qdrant 主机 |
+| `QDRANT_PORT` | - | `6334` | Qdrant gRPC 端口 |
+| `QDRANT_COLLECTION` | - | `tcm_knowledge` | 向量集合名 |
+| `REDIS_ADDR` | - | `localhost:6379` | Redis 地址 |
+| `EMBEDDING_URL` | - | `http://localhost:8081/embed` | Embedding 服务地址 |
+| `RERANKER_URL` | - | `http://localhost:8082/rerank` | Reranker 服务地址 |
+| `ALLOWED_ORIGINS` | - | `http://localhost:3000` | CORS 允许的前端来源 |
 
 ### 3. 启动后端
 ```bash
@@ -224,6 +260,7 @@ cd backend
 go mod tidy
 go run cmd/server/main.go
 ```
+服务启动在 `http://localhost:8080`。按 `Ctrl+C` 会触发优雅关闭。
 
 ### 4. 启动前端
 ```bash
@@ -231,16 +268,33 @@ cd frontend
 npm install
 npm run dev
 ```
+开发服务器启动在 `http://localhost:3000`，自动代理 API 到后端。
 
 ## 后续优化项
 
 ### 短期（P0）
-- [ ] `.env` 加入 `.gitignore`，清理已泄露的密钥
-- [ ] `server.exe` / `server.exe~` 加入 `.gitignore`
-- [ ] 修复会话历史加载（`selectSession` 调用 `getSession` API）
+- [x] `.env` 加入 `.gitignore`，清理已泄露的密钥
+- [x] `server.exe` / `server.exe~` 加入 `.gitignore`
+- [x] 修复会话历史加载（`selectSession` 调用 `getSession` API）
+- [x] 修复 MarkdownRenderer CSS（`border-l-3` → `border-l-2`，添加 `primary-400`）
+- [x] 移除未使用的 `rehype-raw` 依赖
+- [x] Qdrant 连接升级为 `grpc.NewClient`（替代废弃的 `grpc.WithBlock`）
+- [x] 优雅关闭（SIGTERM 处理）
+- [x] `/health` 端点检查依赖健康状态
+- [x] CORS 来源改为环境变量 `ALLOWED_ORIGINS`
+- [x] Agent SSE 流 done/error 提前退出
+- [x] EmbeddingClient 添加 HTTP 状态码检查
+- [x] Store 层添加 Close() 方法
+- [x] 添加 React ErrorBoundary 错误边界
+- [x] 创建 `.env.example` 安全模板
+- [x] `.gitignore` 添加 `*.ps1` 排除
+- [x] ReAct `buildArgs` 使用 `prevResults` 传递工具间上下文
+- [x] `emitAgentEvent` channel 关闭 panic 防护
+- [x] 前端 IME 输入法兼容 + isStreaming 并发修复 + Zustand 选择器优化
+- [x] TCM 工具参数组合一致性修复 + nil ragPipe 防护
+- [x] `types/agent.ts` 补充 `'done'` 类型 + `toggleAgentMode` 清理状态
 - [ ] 集成 `checkQuery` 自动 Agent 检测
-- [ ] 修复 MarkdownRenderer CSS（`border-l-3` → `border-l-2`）
-- [ ] 移除未使用的 `rehype-raw` 依赖或实际使用
+- [ ] 清理 `start.ps1` 和 `.env` 的 Git 历史 + 轮换密钥
 
 ### 中期（P1）
 - [ ] Agent 规划器升级为 LLM 驱动（替换关键词匹配）
@@ -248,8 +302,6 @@ npm run dev
 - [ ] Query 改写
 - [ ] 引用内联链接（Markdown `[参考N]` 可点击跳转到 CitationCard）
 - [ ] 后端单元测试 + 集成测试
-- [ ] 优雅关闭（SIGTERM 处理）
-- [ ] `/health` 端点检查依赖健康状态
 - [ ] 移动端响应式适配（Agent/Citation 面板在小屏不可见）
 
 ### 长期（P2）

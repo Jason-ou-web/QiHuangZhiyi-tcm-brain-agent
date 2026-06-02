@@ -143,17 +143,34 @@ func (e *ReactExecutor) generateThought(task model.AgentTask, query string, prev
 
 func (e *ReactExecutor) buildArgs(task model.AgentTask, query string, prevResults []model.ToolCall) map[string]any {
 	args := map[string]any{}
+
+	// Build enriched context from previous tool results
+	var prevContext string
+	for _, tc := range prevResults {
+		if tc.Result != nil && tc.Result.Success {
+			if data, ok := tc.Result.Data.(map[string]any); ok {
+				if knowledge, ok := data["knowledge"].(string); ok {
+					prevContext += knowledge + "\n"
+				}
+			}
+		}
+	}
+	enrichedQuery := query
+	if prevContext != "" {
+		enrichedQuery = query + "\n\n前置分析结果：\n" + prevContext
+	}
+
 	switch task.ToolName {
 	case "diagnose_symptom":
-		args["symptoms"] = query
+		args["symptoms"] = enrichedQuery
 	case "herb_query":
-		args["condition"] = query
+		args["condition"] = enrichedQuery
 	case "prescription_advice":
-		args["symptoms"] = query
+		args["symptoms"] = enrichedQuery
 	case "wellness_suggestion":
-		args["condition"] = query
+		args["condition"] = enrichedQuery
 	case "acupoint_info":
-		args["condition"] = query
+		args["condition"] = enrichedQuery
 	}
 	return args
 }

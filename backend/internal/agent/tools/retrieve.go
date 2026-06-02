@@ -12,6 +12,9 @@ import (
 // RetrieveKnowledge searches the RAG pipeline with the given query and returns
 // a ToolResult with formatted knowledge and reference count.
 func RetrieveKnowledge(ctx context.Context, ragPipe *rag.Pipeline, query string, extraData map[string]any) (*model.ToolResult, error) {
+	if ragPipe == nil {
+		return &model.ToolResult{Success: false, Error: "RAG pipeline is not initialized"}, nil
+	}
 	results, err := ragPipe.Retrieve(ctx, query, 5)
 	if err != nil {
 		return &model.ToolResult{Success: false, Error: fmt.Sprintf("知识检索失败: %v", err)}, nil

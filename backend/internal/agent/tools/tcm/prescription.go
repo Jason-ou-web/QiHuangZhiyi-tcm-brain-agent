@@ -39,10 +39,12 @@ func (t *PrescriptionTool) Execute(ctx context.Context, args map[string]any, rag
 	query := "中医方剂"
 	if prescriptionName != "" {
 		query = fmt.Sprintf("方剂 %s 组成 功效 主治 加减", prescriptionName)
-	} else if pattern != "" {
-		query = fmt.Sprintf("%s 经典方剂 推荐", pattern)
-	} else if symptoms != "" {
-		query = fmt.Sprintf("针对%s 的中医方剂", symptoms)
+	}
+	if pattern != "" {
+		query += fmt.Sprintf(" %s 经典方剂 推荐", pattern)
+	}
+	if symptoms != "" {
+		query += fmt.Sprintf(" 针对%s", symptoms)
 	}
 
 	return tools.RetrieveKnowledge(ctx, ragPipe, query, map[string]any{

@@ -4,14 +4,16 @@
 
 ## 当前状态
 
-MVP 核心链路已打通：RAG 单轮问答 + Agent 多步推理双模式均可运行，SSE 流式输出、引用卡片、Agent 可视化组件已完整实现。Agent 规划器当前为关键词匹配（非 LLM 驱动），会话历史加载、自动 Agent 检测等功能待完善。详见 [CLAUDE.md](CLAUDE.md)。
+MVP 核心链路已打通：RAG 单轮问答 + Agent 多步推理双模式均可运行，SSE 流式输出、引用卡片、Agent 可视化组件已完整实现。
+
+**2026-06-02 更新**：已完成 14 项代码质量修复和安全加固，包括优雅关闭、健康检查、CORS 配置化、SSE 提前退出、Tailwind CSS 修复、ErrorBoundary、会话历史加载等。Agent 规划器当前为关键词匹配（非 LLM 驱动），自动 Agent 检测等功能待完善。详见 [CLAUDE.md](CLAUDE.md)。
 
 ## 架构概览
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                          Frontend                               │
-│  React + Tailwind + Zustand + TanStack Query                    │
+│  React + Tailwind + Zustand + TanStack Query + ErrorBoundary     │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌───────────┐         │
 │  │ Chat UI  │ │Citation  │ │ Session  │ │ Markdown  │         │
 │  │          │ │ Panel    │ │ Sidebar  │ │ Renderer  │         │
@@ -113,8 +115,9 @@ Step 4: 整合答案
 ```
 agri-qa-system/
 ├── backend/                        # Go + Fiber 后端
-│   ├── cmd/server/main.go          # 入口
-│   ├── config/config.go            # 配置管理
+│   ├── cmd/server/main.go          # 入口（含优雅关闭）
+│   ├── config/config.go            # 配置管理（含 ALLOWED_ORIGINS）
+│   ├── .env.example                # 环境变量模板（安全，可提交）
 │   ├── internal/
 │   │   ├── handler/
 │   │   │   ├── chat.go             # Chat + Session HTTP 处理器
@@ -130,10 +133,10 @@ agri-qa-system/
 │   │   │   └── memory/             # ShortTermMemory（Redis）
 │   │   ├── rag/pipeline.go         # RAG Pipeline
 │   │   ├── llm/deepseek.go         # DeepSeek API 客户端
-│   │   ├── store/                  # Qdrant / Redis / Embedding / Reranker
+│   │   ├── store/                  # Qdrant / Redis / Embedding / Reranker（均含 Close/状态码检查）
 │   │   ├── middleware/middleware.go # CORS / Logger / RateLimit / Auth
 │   │   └── model/                  # 数据模型
-│   └── .env                        # 环境变量（不提交！）
+│   └── .env                        # 环境变量（不提交！已被 .gitignore 排除）
 ├── frontend/                       # React 前端
 │   └── src/
 │       ├── components/
@@ -142,7 +145,8 @@ agri-qa-system/
 │       │   ├── Citation/           # CitationCard, CitationPanel
 │       │   ├── Markdown/           # MarkdownRenderer
 │       │   ├── Session/            # SessionSidebar
-│       │   └── Layout/             # AppLayout
+│       │   ├── Layout/             # AppLayout
+│       │   └── ErrorBoundary.tsx   # React 错误边界
 │       ├── stores/                 # Zustand: chatStore, sessionStore, agentStore
 │       ├── services/               # api.ts, sse.ts, agent.ts
 │       ├── hooks/                  # useChat, useSessions, useAgent
@@ -158,8 +162,7 @@ agri-qa-system/
 
 - Go 1.22+
 - Node.js 20+
-- Qdrant（向量数据库）
-- Redis（会话缓存）
+- Docker（Qdrant + Redis）
 - DeepSeek API Key
 - Embedding 服务（BGE-M3，独立部署）
 - Reranker 服务（BGE-Reranker-v2，独立部署）
@@ -173,20 +176,21 @@ docker-compose up -d
 ### 2. 环境变量
 
 ```bash
-# 必填
-export DEEPSEEK_API_KEY="sk-xxx"
-
-# 可选（有默认值）
-export SERVER_PORT="8080"
-export DEEPSEEK_MODEL="deepseek-chat"
-export QDRANT_HOST="localhost"
-export QDRANT_PORT="6334"
-export QDRANT_COLLECTION="tcm_knowledge"
-export REDIS_ADDR="localhost:6379"
-export EMBEDDING_URL="http://localhost:8081/embed"
-export RERANKER_URL="http://localhost:8082/rerank"
-export JWT_SECRET="your-secret-here"
+# 从模板创建配置文件
+cp backend/.env.example backend/.env
+# 编辑 backend/.env，填入 DEEPSEEK_API_KEY 和 JWT_SECRET
 ```
+
+| 变量 | 必填 | 默认值 | 说明 |
+|------|------|--------|------|
+| `DEEPSEEK_API_KEY` | ✅ | - | DeepSeek API 密钥 |
+| `JWT_SECRET` | ✅ | - | JWT 签名密钥（`openssl rand -hex 32`） |
+| `SERVER_PORT` | - | `8080` | 后端服务端口 |
+| `ALLOWED_ORIGINS` | - | `http://localhost:3000` | CORS 允许的前端来源 |
+| `QDRANT_HOST` | - | `localhost` | Qdrant 主机地址 |
+| `REDIS_ADDR` | - | `localhost:6379` | Redis 地址 |
+| `EMBEDDING_URL` | - | `http://localhost:8081/embed` | Embedding 服务 |
+| `RERANKER_URL` | - | `http://localhost:8082/rerank` | Reranker 服务 |
 
 ### 3. 启动后端
 
@@ -196,7 +200,7 @@ go mod tidy
 go run cmd/server/main.go
 ```
 
-服务启动在 `http://localhost:8080`。
+服务启动在 `http://localhost:8080`。按 `Ctrl+C` 触发优雅关闭（10s 超时）。
 
 ### 4. 启动前端
 
@@ -274,6 +278,16 @@ Agent 模式 SSE 流式对话。事件类型：
 
 删除指定会话。
 
+### GET /health
+
+健康检查，返回依赖状态：
+
+```json
+{ "status": "ok", "details": { "qdrant": "ok", "redis": "ok" } }
+// 或降级时：
+{ "status": "degraded", "details": { "qdrant": "unavailable", "redis": "ok" } }
+```
+
 ## 技术栈
 
 | 层级 | 技术 | 用途 |
@@ -289,7 +303,7 @@ Agent 模式 SSE 流式对话。事件类型：
 | 样式 | Tailwind CSS 3 | 原子化 CSS |
 | 状态管理 | Zustand 4 | 客户端状态（含 Agent 状态） |
 | 数据管理 | TanStack Query 5 | 服务端状态缓存 |
-| Markdown | react-markdown 9 | LLM 输出渲染 |
+| Markdown | react-markdown 9 + remark-gfm | LLM 输出渲染 |
 
 ## TCM 工具集
 
@@ -310,6 +324,7 @@ Agent 模式 SSE 流式对话。事件类型：
 - **已实现**：核心问答可用、引用可追踪、SSE 流式响应
 - **已实现**：5 个 TCM 工具覆盖诊断/药材/方剂/养生/穴位场景
 - **已实现**：Agent 可视化组件（推理步骤 + 任务进度 + 工具调用面板）
+- **已实现**：优雅关闭、健康检查、ErrorBoundary 等生产基础
 - **未实现**：PostgreSQL 持久化，先用 Redis 跑通核心链路
 - **未实现**：用户登录/注册，先做免登录体验
 - **未实现**：全文检索（Elasticsearch），Qdrant 单用足够
@@ -327,7 +342,17 @@ Agent 模式 SSE 流式对话。事件类型：
 ## 后续优化项
 
 ### 短期（完善 MVP）
-- [ ] 修复会话历史加载（`selectSession` 需调用 `getSession` API）
+- [x] `.env` + `*.ps1` 加入 `.gitignore`，创建 `.env.example` 安全模板
+- [x] 修复会话历史加载（`selectSession` 调用 `getSession` API）
+- [x] 修复 MarkdownRenderer Tailwind CSS 类
+- [x] 移除死依赖 `rehype-raw`
+- [x] Qdrant gRPC 升级 + 优雅关闭 + Health 检查 + CORS 配置化
+- [x] Agent SSE done/error 提前退出 + EmbeddingClient 状态码检查
+- [x] React ErrorBoundary 错误边界
+- [x] ReAct `buildArgs` 使用 `prevResults` 传递工具间上下文
+- [x] IME 输入法兼容 + isStreaming 并发修复 + Zustand 选择器优化
+- [x] TCM 工具参数组合一致性 + nil ragPipe 防护
+- [x] Agent 可视化组件 key 稳定性 + Agent 状态清理
 - [ ] 集成自动 Agent 检测（`checkQuery` 已实现但未接入 UI）
 - [ ] 中医知识库文档预处理管线（PDF 解析 + 语义分块）
 - [ ] 知识库批量导入脚本

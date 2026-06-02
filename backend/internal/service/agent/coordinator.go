@@ -91,6 +91,7 @@ func (c *Coordinator) SaveAnswer(ctx context.Context, sessionID, answer string) 
 }
 
 func emitAgentEvent(ch chan<- model.AgentEvent, event model.AgentEvent) {
+	defer func() { recover() }() // recover from panic if channel is closed
 	select {
 	case ch <- event:
 	default:

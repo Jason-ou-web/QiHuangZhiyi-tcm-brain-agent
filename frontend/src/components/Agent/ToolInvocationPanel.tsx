@@ -14,7 +14,7 @@ export function ToolInvocationPanel({ toolCalls }: Props) {
         工具调用 ({toolCalls.length})
       </h4>
       {toolCalls.map((call, i) => (
-        <ToolCallItem key={i} call={call} index={i} />
+        <ToolCallItem key={call.call_id || i} call={call} index={i} />
       ))}
     </div>
   )
@@ -49,7 +49,7 @@ function ToolCallItem({ call, index }: { call: ToolCall; index: number }) {
           <div>
             <span className="text-gray-500">参数：</span>
             <code className="text-gray-700 bg-gray-100 px-1 py-0.5 rounded">
-              {JSON.stringify(call.args, null, 0)}
+              {JSON.stringify(call.args, null, 2)}
             </code>
           </div>
           {call.result != null && (
